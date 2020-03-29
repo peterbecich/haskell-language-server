@@ -1,0 +1,145 @@
+sudo: false
+language: generic
+
+addons:
+  apt:
+    update: true
+    packages:
+    - libgmp-dev
+    - libnuma-dev
+    - llvm-7
+    - llvm-7-dev
+
+cache:
+  directories:
+  - $HOME/.stack
+  - $HOME/.cabal/
+  - $HOME/.local/bin
+  - $TRAVIS_BUILD_DIR/.stack-work
+  timeout: 2000
+
+stages:
+  - setup
+  - dependencies_1
+  - dependencies_2
+  - dependencies_3
+  - dependencies
+  - build
+  # - test
+
+jobs:
+  include:
+  # Ubuntu ARM64
+  - stage: setup
+    os: linux
+    arch: arm64
+    dist: bionic
+    env: GHC_VER="8.6.5"
+    script: &setuparm64
+      - export DIR=$HOME/.local/bin
+      - if [ ! -d "$DIR" ]; then mkdir -p $HOME/.local/bin; fi
+      - export PATH=$HOME/.local/bin:/usr/lib/llvm-7/bin:$PATH
+      - travis_retry curl -L https://get.haskellstack.org/stable/linux-aarch64.tar.gz | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
+      - hash -r
+      - travis_retry stack --no-terminal --install-ghc --stack-yaml=stack-$GHC_VER.yaml setup
+      - stack --version
+  - stage: setup
+    os: linux
+    arch: arm64
+    dist: bionic
+    env: GHC_VER="8.8.2"
+    script: *setuparm64
+
+  - stage: dependencies_1
+    os: linux
+    arch: arm64
+    dist: bionic
+    env: GHC_VER="8.6.5"
+    script: &dependencies_1
+      - export PATH=$HOME/.local/bin:/usr/lib/llvm-7/bin:$PATH
+      # Build some dependencies to offload the next stage from doing too much work
+      - stack --stack-yaml=stack-$GHC_VER.yaml build alex happy binary bytestring containers deepseq hpc pretty process time transformers unix
+      - stack --stack-yaml=stack-$GHC_VER.yaml install alex happy binary bytestring containers deepseq hpc pretty process time transformers unix
+
+      - stack --stack-yaml=stack-$GHC_VER.yaml install --fast -j 2 --no-run-benchmarks --no-library-stripping --no-executable-stripping --no-haddock-deps --no-haddock-internal --dry-run ghc-lib-parser
+  - stage: dependencies_1
+    os: linux
+    arch: arm64
+    dist: bionic
+    env: GHC_VER="8.8.2"
+    script: *dependencies_1
+
+  - stage: dependencies_2
+    os: linux
+    arch: arm64
+    dist: bionic
+    env: GHC_VER="8.6.5"
+    script: &dependencies_2
+      - export PATH=$HOME/.local/bin:/usr/lib/llvm-7/bin:$PATH
+      # Build some dependencies to offload the next stage from doing too much work
+      - timeout 1800 stack --stack-yaml=stack-$GHC_VER.yaml install --fast -j 2 --no-run-benchmarks --no-library-stripping --no-executable-stripping --no-haddock-deps --no-haddock-internal ghc-lib-parser
+  - stage: dependencies_2
+    os: linux
+    arch: arm64
+    dist: bionic
+    env: GHC_VER="8.8.2"
+    script: *dependencies_2
+
+  - stage: dependencies_3
+    os: linux
+    arch: arm64
+    dist: bionic
+    env: GHC_VER="8.6.5"
+    script: &dependencies_3
+      - export PATH=$HOME/.local/bin:/usr/lib/llvm-7/bin:$PATH
+      # Build some dependencies to offload the next stage from doing too much work
+      - stack --stack-yaml=stack-$GHC_VER.yaml install monad-dijkstra optics-core ormolu parser-combinators regex-base
+  - stage: dependencies_3
+    os: linux
+    arch: arm64
+    dist: bionic
+    env: GHC_VER="8.8.2"
+    script: *dependencies_3
+
+  - stage: dependencies
+    os: linux
+    arch: arm64
+    dist: bionic
+    env: GHC_VER="8.6.5"
+    script: &dependencies
+      - export PATH=$HOME/.local/bin:/usr/lib/llvm-7/bin:$PATH
+      - stack --no-terminal --install-ghc --stack-yaml=stack-$GHC_VER.yaml build --only-dependencies
+  - stage: dependencies
+    os: linux
+    arch: arm64
+    dist: bionic
+    env: GHC_VER="8.8.2"
+    script: *dependencies
+
+  - stage: build
+    os: linux
+    arch: arm64
+    dist: bionic
+    env: GHC_VER="8.6.5"
+    script: &build
+      - export PATH=$HOME/.local/bin:/usr/lib/llvm-7/bin:$PATH
+      - stack --no-terminal --stack-yaml=stack-$GHC_VER.yaml build
+      - stack --no-terminal --stack-yaml=stack-$GHC_VER.yaml install
+  - stage: build
+    os: linux
+    arch: arm64
+    dist: bionic
+    env: GHC_VER="8.8.2"
+    script: *build
+
+  # - stage: test
+  #   os: linux
+  #   arch: arm64
+  #   dist: bionic
+  #   env: GHC_VER="8.6.2"
+  #   script: &test
+  #     - export PATH=$HOME/.local/bin:$PATH
+  #     - cd ..
+  #     - stack install --resolver=lts-14.15 liquid-fixpoint-0.8.0.2 liquidhaskell-0.8.6.2
+  #     - cd $TRAVIS_BUILD_DIR
+  #     - stack --no-terminal --stack-yaml=stack-$GHC_VER.yaml test
